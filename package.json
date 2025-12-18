@@ -1,0 +1,30 @@
+{
+  "name": "backendexpress",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon index.js",
+    "build": "node -e \"console.log('No build step')\"",
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.0",
+    "@mozilla/readability": "^0.6.0",
+    "axios": "^1.7.9",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "jsdom": "^25.0.1",
+    "mongodb": "^7.0.0",
+    "mongoose": "^9.0.1",
+    "node-cron": "^4.0.0",
+    "nodemon": "^3.1.11",
+    "rss-parser": "^3.13.0"
+  }
+}
