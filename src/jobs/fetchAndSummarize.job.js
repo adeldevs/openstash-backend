@@ -26,6 +26,7 @@ function getValidCategories(categories) {
 const cron = require('node-cron');
 
 const ArticleSummary = require('../models/ArticleSummary');
+const JobState = require('../models/JobState');
 const { connectToMongo } = require('../config/db');
 const { env, validateEnv } = require('../config/env');
 const { fetchAllFeeds } = require('../services/rss/fetchFeeds');
@@ -36,6 +37,68 @@ const { normalizeUrl, domainFromUrl } = require('../services/utils/url');
 const { formatErrorForLog } = require('../services/utils/safeError');
 
 let isRunning = false;
+
+const DAILY_GEMINI_JOB_KEY = 'daily-gemini-fetch-and-summarize';
+const DAILY_JOB_CRON = '0 8 * * *';
+const DAILY_JOB_TIMEZONE = 'Asia/Kolkata';
+
+function getTimeZoneParts(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const out = {};
+  for (const p of parts) {
+    if (p.type !== 'literal') out[p.type] = p.value;
+  }
+
+  return {
+    year: out.year,
+    month: out.month,
+    day: out.day,
+    hour: Number.parseInt(out.hour, 10),
+    minute: Number.parseInt(out.minute, 10),
+  };
+}
+
+function toDateKeyInTimeZone(date, timeZone) {
+  const { year, month, day } = getTimeZoneParts(date, timeZone);
+  return `${year}-${month}-${day}`;
+}
+
+function isEightAmInTimeZone(date, timeZone) {
+  const { hour } = getTimeZoneParts(date, timeZone);
+  return hour === 8;
+}
+
+async function tryAcquireDailyRun(now) {
+  const today = toDateKeyInTimeZone(now, DAILY_JOB_TIMEZONE);
+
+  const updated = await withMongoRetry(
+    () =>
+      JobState.findOneAndUpdate(
+        { key: DAILY_GEMINI_JOB_KEY, 'value.lastRunDate': { $ne: today } },
+        {
+          $set: {
+            key: DAILY_GEMINI_JOB_KEY,
+            'value.lastRunDate': today,
+            'value.lastRunAt': now,
+          },
+        },
+        { upsert: true, new: true }
+      ),
+    'findOneAndUpdate(JobState.daily-run)'
+  );
+
+  // If we didn't match (already ran today), Mongoose returns null.
+  return Boolean(updated);
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -338,7 +401,7 @@ async function retryExtractedSummaries() {
   }
 }
 
-async function runOnce() {
+async function runOnce(options = {}) {
   if (isRunning) {
     console.log('Fetch job already running; skipping.');
     return;
@@ -348,6 +411,27 @@ async function runOnce() {
   try {
     validateEnv();
     await connectToMongo(env.MONGODB_URI);
+
+    const now = new Date();
+    const force = Boolean(options.force);
+
+    if (!force && !isEightAmInTimeZone(now, DAILY_JOB_TIMEZONE)) {
+      console.log(
+        `Skipping job: only allowed at 8 AM IST (now: ${now.toString()}).`
+      );
+      return;
+    }
+
+    if (!force) {
+      const acquired = await tryAcquireDailyRun(now);
+      if (!acquired) {
+        console.log(
+          `Skipping job: already ran today (${toDateKeyInTimeZone(now, DAILY_JOB_TIMEZONE)}) (IST).`
+        );
+        return;
+      }
+    }
+
     console.log('Starting RSS fetch + summarize job...');
 
     await retryExtractedSummaries();
@@ -471,15 +555,18 @@ async function runOnce() {
 }
 
 function startScheduler() {
-  cron.schedule(env.FETCH_CRON, () => {
-    runOnce().catch((err) => console.error('Job error:', formatErrorForLog(err)));
-  });
+  cron.schedule(
+    DAILY_JOB_CRON,
+    () => {
+      runOnce().catch((err) => console.error('Job error:', formatErrorForLog(err)));
+    },
+    { timezone: DAILY_JOB_TIMEZONE }
+  );
 
-  if (env.RUN_ON_STARTUP) {
-    runOnce().catch((err) => console.error('Job error:', formatErrorForLog(err)));
-  }
-
-  console.log(`Scheduler active (cron: ${env.FETCH_CRON}).`);
+  // Intentionally do NOT run on startup: Gemini calls must happen only at 8 AM.
+  console.log(
+    `Scheduler active (daily @ 8:00 AM IST; cron: ${DAILY_JOB_CRON}; tz: ${DAILY_JOB_TIMEZONE}).`
+  );
 }
 
 module.exports = { startScheduler, runOnce };

@@ -118,6 +118,13 @@ Returns the stored document. If `includeRaw=false`, `content.rawText` is omitted
 - `400` – invalid id (`{ "message": "Invalid id" }`)
 - `404` – not found (`{ "message": "Not found" }`)
 
+## Background jobs
+
+The RSS fetch + Gemini summarize job is scheduled **once per day at 8:00 AM IST (Asia/Kolkata)**.
+
+- The server does **not** run the job on startup.
+- A Mongo-backed daily guard prevents accidental double-runs (e.g. restarts).
+
 ## Field reference (common)
 
 Common fields you’ll see in responses:

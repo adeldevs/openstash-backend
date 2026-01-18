@@ -48,8 +48,6 @@ const env = {
     'http://feeds.bbci.co.uk/news/video_and_audio/news_front_page/rss.xml',
   ]),
 
-  FETCH_CRON: process.env.FETCH_CRON || '0 0 * * *',
-  RUN_ON_STARTUP: parseBoolEnv('RUN_ON_STARTUP', true),
   MAX_ITEMS_PER_FEED: parseIntEnv('MAX_ITEMS_PER_FEED', 10),
   MAX_SUMMARIES_PER_RUN: parseIntEnv('MAX_SUMMARIES_PER_RUN', 30),
   RETRY_EXTRACTED_LIMIT: parseIntEnv('RETRY_EXTRACTED_LIMIT', 30),
